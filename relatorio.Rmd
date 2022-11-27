@@ -1,0 +1,493 @@
+---
+title: "Mercado de combustíveis no Brasil"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+Em meio ao contexto favorável, os
+proprietários de postos de combustível
+devem estar preparados para atender a
+demanda existente, principalmente nos
+períodos de maior procura. Para isso, faz-se
+necessário identificar quais são os períodos
+de maior movimentação do setor. 
+s
+
+```{r,echo=FALSE,include=FALSE,warning=FALSE}
+install.packages("readxl")
+install.packages("dplyr")
+install.packages("tidyverse")
+install.packages("ggplot2")
+install.packages("knitr")
+install.packages("hrbrthemes")
+install.packages("gridExtra")
+install.packages("ggthemes")
+install.packages("scales")
+
+```
+
+
+```{r,echo=FALSE,include=FALSE,warning=FALSE}
+
+library(readxl)
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(knitr)
+library(hrbrthemes)
+library(gridExtra)
+library(ggthemes)
+library(scales)
+```
+
+
+```{r, echo=FALSE}
+# carregando dados
+diesel = read_excel("dados_anp.xlsx", sheet = "diesel")
+gasolina = read_excel("dados_anp.xlsx", sheet = "gasolina")
+etanol = read_excel("dados_anp.xlsx", sheet = "etanol")
+```
+
+
+```{r, echo=FALSE}
+# manipulando as colunas de ano e valores de vendas
+diesel = diesel %>%
+  pivot_longer(
+    cols = "2000":"2020",
+    names_to = "ano",
+    names_prefix = "",
+    values_to = "vendas")
+gasolina = gasolina %>%
+  pivot_longer(
+    cols = "2000":"2020",
+    names_to = "ano",
+    names_prefix = "",
+    values_to = "vendas")
+etanol = etanol %>%
+  pivot_longer(
+    cols = "2000":"2020",
+    names_to = "ano",
+    names_prefix = "",
+    values_to = "vendas")
+```
+
+```{r, echo = FALSE}
+# atribuindo coluna de combustivel e unificando
+diesel$combustivel = ("diesel")
+gasolina$combustivel = ("gasolina")
+etanol$combustivel = ("etanol")
+dados = bind_rows(diesel,gasolina,etanol) 
+dados = dados %>%
+  select(regiao,vendas,combustivel,meses,ano)
+
+```
+
+# Visualizando os dados
+
+```{r,echo=FALSE}
+data.table::data.table(dados)
+```
+# 1.0 Entendendo os dados
+### Sazonalidade e tendências no Brasil
+```{r, echo=FALSE, warning=FALSE, include=FALSE}
+
+maior_venda = dados %>%
+  group_by(combustivel,ano,meses) %>%
+  summarise(Total = sum(vendas)) %>%
+  arrange(desc(Total))
+```
+```{r, echo=FALSE}
+
+venda_diesel = maior_venda %>%
+  filter(combustivel == "diesel")
+venda_gasolina = maior_venda %>%
+  filter(combustivel == "gasolina")
+venda_etanol = maior_venda %>%
+  filter(combustivel == "etanol")
+```
+
+```{r, echo = FALSE,include=FALSE}
+tendencia_diesel = lm(venda_diesel$Total~venda_diesel$meses)
+venda_diesel$tendencia_diesel = 117364521+1637815*venda_diesel$Total
+venda_diesel = venda_diesel %>%
+  select(combustivel,ano,Total,tendencia_diesel,meses)
+
+tendencia_gasolina = lm(venda_gasolina$Total~venda_gasolina$meses)
+venda_gasolina$tendencia_gasolina = 78239291.8+708165.4*venda_gasolina$Total
+venda_gasolina = venda_gasolina %>%
+  select(combustivel,ano,Total,tendencia_gasolina,meses)
+
+tendencia_etanol = lm(venda_etanol$Total~venda_etanol$meses)
+venda_etanol$tendencia_etanol = 2961362.3+778506.9*venda_etanol$Total
+venda_etanol = venda_etanol %>%
+  select(combustivel,ano,Total,tendencia_etanol,meses)
+
+```
+
+```{r, echo = FALSE,include=FALSE}
+## medias
+media_mes_diesel = venda_diesel %>%
+  group_by(meses) %>%
+  summarise(media = mean(Total))
+media_mes_diesel = as.data.frame(media_mes_diesel)
+media_total_diesel = mean(venda_diesel$Total)
+media_mes_diesel$perc_media_geral = media_mes_diesel$media/media_total_diesel
+
+media_mes_diesel
+
+media_mes_gasolina = venda_gasolina %>%
+  group_by(meses) %>%
+  summarise(media = mean(Total))
+media_mes_gasolina = as.data.frame(media_mes_gasolina)
+media_total_gasolina = mean(venda_gasolina$Total)
+media_mes_gasolina$perc_media_geral = media_mes_gasolina$media/media_total_gasolina
+
+media_mes_gasolina
+
+media_mes_etanol = venda_etanol %>%
+  group_by(meses) %>%
+  summarise(media = mean(Total))
+media_mes_etanol = as.data.frame(media_mes_etanol)
+media_total_etanol = mean(venda_etanol$Total)
+media_mes_etanol$perc_media_geral = media_mes_etanol$media/media_total_etanol
+
+media_mes_etanol
+
+```
+```{r, include=FALSE,echo=FALSE}
+#construindo tendencia + sazonalidade
+venda_diesel = venda_diesel %>%
+  left_join(media_mes_diesel, by = "meses")
+venda_gasolina = venda_gasolina %>%
+  left_join(media_mes_gasolina, by = "meses")
+venda_etanol = venda_etanol %>%
+  left_join(media_mes_etanol, by = "meses")
+
+venda_diesel$tendencia_sazonalidade = venda_diesel$tendencia_diesel*venda_diesel$perc_media_geral
+
+venda_gasolina$tendencia_sazonalidade = venda_gasolina$tendencia_gasolina*venda_gasolina$perc_media_geral
+
+venda_etanol$tendencia_sazonalidade = venda_etanol$tendencia_etanol*venda_etanol$perc_media_geral
+
+```
+
+
+
+
+
+```{r, echo=FALSE,warning=FALSE,out.width="50%"}
+
+ggplot(venda_diesel, aes(x=meses, y=tendencia_sazonalidade)) +
+  geom_line(color="#69b3a2", size=1, alpha=0.9, linetype=1) +
+  theme_ipsum() +
+  ggtitle("Diesel")+
+  scale_x_continuous(breaks = 1:12)+
+  theme_grey(base_size = 15)+
+  ylab("Tendencia + sazonalidade")
+
+ggplot(venda_gasolina, aes(x=meses, y=tendencia_sazonalidade)) +
+  geom_line(color="#000066", size=1, alpha=0.9, linetype=1) +
+  theme_ipsum() +
+  ggtitle("Gasolina")+
+  scale_x_continuous(breaks = 1:12)+
+  theme_grey(base_size = 15)+
+  ylab("Tendencia + sazonalidade")
+
+ggplot(venda_etanol, aes(x=meses, y=tendencia_sazonalidade)) +
+  geom_line(color="#FF9933", size=1, alpha=0.9, linetype=1) +
+  theme_ipsum() +
+  ggtitle("Etanol")+
+  scale_x_continuous(breaks = 1:12)+
+  theme_grey(base_size = 15)+
+  ylab("Tendencia + sazonalidade")
+
+```
+```{r warning=FALSE,echo=FALSE,include=FALSE}
+# essa sazonalidade é igual em todos os estados?
+
+# puxando dados com regiao
+dados_regiao = dados %>%
+  group_by(regiao,combustivel,ano,meses) %>%
+  summarise(Total = sum(vendas)) %>%
+  arrange(desc(Total))
+
+
+## filtrando
+
+regiao_diesel = dados_regiao %>%
+  filter(combustivel == "diesel")
+regiao_gasolina = dados_regiao %>%
+  filter(combustivel == "gasolina")
+regiao_etanol = dados_regiao %>%
+  filter(combustivel == "etanol")
+
+## construindo tendencia linear 
+
+tendencia_reg_diesel = lm(regiao_diesel$Total~regiao_diesel$meses)
+regiao_diesel$tendencia_reg_diesel = 620976.301+8665.685*regiao_diesel$Total
+
+regiao_diesel = regiao_diesel %>%
+  select(combustivel,ano,Total,tendencia_reg_diesel,meses)
+
+tendencia_reg_gasolina = lm(regiao_gasolina$Total~regiao_gasolina$meses)
+regiao_gasolina$tendencia_reg_gasolina = 413965.036+3746.907*regiao_gasolina$Total
+regiao_gasolina = regiao_gasolina %>%
+  select(combustivel,ano,Total,tendencia_reg_gasolina,meses)
+
+tendencia_reg_etanol = lm(regiao_etanol$Total~regiao_etanol$meses)
+regiao_etanol$tendencia_reg_etanol = 156685.864+4119.084*regiao_etanol$Total
+regiao_etanol = regiao_etanol %>%
+  select(combustivel,ano,Total,tendencia_reg_etanol,meses)
+
+## medias
+
+media_mes_reg_diesel = regiao_diesel %>%
+  group_by(meses) %>%
+  summarise(media = mean(Total))
+media_mes_reg_diesel = as.data.frame(media_mes_reg_diesel)
+media_total_reg_diesel = mean(regiao_diesel$Total)
+media_mes_reg_diesel$perc_media_geral = media_mes_reg_diesel$media/media_total_reg_diesel
+
+media_mes_reg_diesel
+
+media_mes_reg_gasolina = regiao_gasolina %>%
+  group_by(meses) %>%
+  summarise(media = mean(Total))
+media_mes_reg_gasolina = as.data.frame(media_mes_reg_gasolina)
+media_total_reg_gasolina = mean(regiao_gasolina$Total)
+media_mes_reg_gasolina$perc_media_geral = media_mes_reg_gasolina$media/media_total_reg_gasolina
+
+media_mes_reg_gasolina
+
+media_mes_reg_etanol = regiao_etanol %>%
+  group_by(meses) %>%
+  summarise(media = mean(Total))
+
+media_mes_reg_etanol = as.data.frame(media_mes_reg_etanol)
+media_total_reg_etanol = mean(regiao_etanol$Total)
+media_mes_reg_etanol$perc_media_geral = media_mes_reg_etanol$media/media_total_reg_etanol
+
+media_mes_etanol
+
+
+# Dados de regiao - construindo tendencia + sazonalidade 
+regiao_diesel = regiao_diesel %>%
+  left_join(media_mes_reg_diesel, by = "meses")
+regiao_gasolina = regiao_gasolina %>%
+  left_join(media_mes_reg_gasolina, by = "meses")
+regiao_etanol = regiao_etanol %>%
+  left_join(media_mes_reg_etanol, by = "meses")
+
+regiao_diesel$tendencia_sazonalidade = regiao_diesel$tendencia_reg_diesel*regiao_diesel$perc_media_geral
+
+regiao_gasolina$tendencia_sazonalidade = regiao_gasolina$tendencia_reg_gasolina*regiao_gasolina$perc_media_geral
+
+regiao_etanol$tendencia_sazonalidade = regiao_etanol$tendencia_reg_etanol*regiao_etanol$perc_media_geral
+
+
+
+
+```
+
+
+
+
+No que diz respeito ao óleo diesel,
+Audi (2010) explana que a produção
+primária tem grande influência nas
+oscilações de volume de vendas desse
+produto. Segundo o autor, nos meses de
+entressafra (dezembro e janeiro), o volume
+de vendas é afetado, pois os produtores não
+utilizam implementos agrícolas como
+tratores, plantadeiras ou colheitadeiras que
+necessitem de combustível, já que durante
+este período as atividades são mais manuais.
+Em contrapartida, os meses de outubro e
+novembro (plantio) e fevereiro e março
+(colheita) são períodos de grandes
+movimentações no meio rural, que por
+consequência resultam no aumento do
+consumo do óleo diesel.
+
+A sazonalidade da gasolina foi
+apontada por Vilela e Junior (2010), os quais
+desenvolveram um estudo com o objetivo de
+identificar a sensibilidade da demanda da
+gasolina comum. Seus achados revelam que
+esse tipo de combustível líquido é mais
+consumido nos últimos meses do ano,
+provavelmente, pelo aumento da renda com
+o 13º salário, e pelas férias e festas do fim do
+ano. Todavia, no período do início do ano
+eles relatam uma queda da demanda,
+decorrente, talvez, da diminuição de renda
+líquida mensal graças à grande quantidade de
+impostos a serem pagos nessa época e dos
+compromissos fixados no fim do ano
+anterior. Outro estudo salienta que a venda
+de gasolina ganha espaço nos meses de
+entressafra, como dezembro e janeiro,
+especialmente pela queda no dispêndio com
+outros combustíveis como o óleo diesel.
+
+A produção brasileira de etanol é sazonal e tipicamente atinge o pico durante 
+o quarto trimestre (outubro a dezembro) de cada ano. 
+O pico coincide com a colheita da cana-de-açúcar, 
+principal matéria-prima utilizada na produção de etanol no Brasil.
+Essa produção sazonal de etanol combustível pode levar a variações mensais 
+significativas na produção total de petróleo e outros líquidos do Brasil.
+A sazonalidade das safras de cana-de-açúcar significa que a produção de etanol 
+no Brasil é mais baixa entre janeiro e março. Fonte: O Petróleo
+
+
+
+# Sazonalidade entre os Estados brasileiros
+
+```{r,echo=FALSE,out.width="50%",warning=FALSE}
+
+regiao_diesel = regiao_diesel[regiao_diesel$regiao!="br", ]
+regiao_gasolina = regiao_gasolina[regiao_gasolina$regiao!="br", ]
+regiao_etanol = regiao_etanol[regiao_etanol$regiao!="br", ]
+
+ggplot(regiao_diesel, aes(x=meses, y=tendencia_sazonalidade,col=factor(regiao))) +
+  geom_line() +
+  theme_economist() +
+  ggtitle("Diesel")+
+  scale_x_continuous(breaks = 1:12)+
+  theme_grey(base_size = 15)+
+  ylab("Tendencia + sazonalidade")
+
+ggplot(regiao_gasolina, aes(x=meses, y=tendencia_sazonalidade,col=factor(regiao))) +
+  geom_line() +
+  theme_ipsum() +
+  ggtitle("Gasolina")+
+  scale_x_continuous(breaks = 1:12)+
+  theme_grey(base_size = 15)+
+  ylab("Tendencia + sazonalidade")
+
+ggplot(regiao_etanol, aes(x=meses, y=tendencia_sazonalidade, col=factor(regiao))) +
+  geom_line() +
+  theme_ipsum() +
+  ggtitle("Etanol")+
+  scale_x_continuous(breaks = 1:12)+
+  theme_grey(base_size = 15)+
+  ylab("Tendencia + sazonalidade")
+
+```
+
+ Graficamente, a tendência + sazonalidade aparenta ser igual entre os estados. 
+
+# Consumo de combustíveis
+
+```{r,echo=FALSE,out.width="50.0%",warning=FALSE}
+regiao_diesel = regiao_diesel[regiao_diesel$regiao!="br", ]
+regiao_gasolina = regiao_gasolina[regiao_gasolina$regiao!="br", ]
+regiao_etanol = regiao_etanol[regiao_etanol$regiao!="br", ]
+
+regiao_diesel$percent_d = regiao_diesel$Total/sum(regiao_diesel$Total)*100
+regiao_gasolina$percent_g = regiao_gasolina$Total/sum(regiao_gasolina$Total)*100
+regiao_etanol$percent_e = regiao_etanol$Total/sum(regiao_etanol$Total)*100
+
+
+ggplot(regiao_diesel, aes(x = regiao, y=percent_d, fill = regiao))+
+  geom_bar(position = position_dodge(1), stat = "identity")+ 
+  guides(fill=FALSE)+
+  geom_text(aes(y = percent_d, label = scales::percent(percent_d)), vjust = 300,
+            position = position_dodge(width = 1)) +
+  xlab("Estado")  +
+  ylab("Percentual de consumo") +
+  scale_y_continuous(labels = scales::percent)+
+  theme_grey(base_size = 15)+
+  ggtitle("Diesel")
+
+
+ggplot(regiao_gasolina, aes(x = regiao, y=percent_g, fill = regiao))+
+  geom_bar(position = position_dodge(1), stat = "identity")+ 
+  guides(fill=FALSE)+
+  geom_text(aes(y = percent_g, label = scales::percent(percent_g)), vjust = 300,
+            position = position_dodge(width = 1)) +
+  xlab("Estado")  +
+  ylab("Percentual de consumo") +
+  scale_y_continuous(labels = scales::percent)+
+  theme_grey(base_size = 15)+
+  ggtitle("Gasolina")
+
+ggplot(regiao_etanol, aes(x = regiao, y=percent_e, fill = regiao))+
+  geom_bar(position = position_dodge(1), stat = "identity")+ 
+  guides(fill=FALSE)+
+  geom_text(aes(y = percent_e, label = scales::percent(percent_e)), vjust = 300,
+            position = position_dodge(width = 1)) +
+  xlab("Estado")  +
+  ylab("Percentual de consumo") +
+  scale_y_continuous(labels = scales::percent)+
+  theme_grey(base_size = 15)+
+  ggtitle("Etanol")
+
+
+
+```
+
+SP é lider em consumo, sendo que consome mais de 50% do etanol total consumido entre os estados.
+Sp tem a gasolina e o etanol [mais barato do País](https://br.financas.yahoo.com/news/gasolina-de-sp-e-a-mais-barata-do-brasil-veja-o-ranking-080046888.html)
+e também é o maior produtor de Etanol do Brasil.
+
+# Market Size
+
+Tamanho de mercado é um conceito que ajuda a entender qual o potencial de crescimento de um negócio. Para isso, são considerados fatores como receita do setor e da categoria, número de consumidores e valor médio das transações.
+Tamanho de mercado é uma forma de identificar até onde sua empresa pode chegar.
+
+```{r,echo=FALSE, warning=FALSE, message=FALSE}
+market_size = dados %>%
+  group_by(combustivel,ano) %>%
+  summarise(vendas_mkt = sum(vendas)) %>%
+  arrange(desc(vendas_mkt))
+
+
+market_size$ano = as.factor(market_size$ano)
+
+ggplot(market_size, aes(fill=combustivel, y=vendas_mkt, x=ano)) + 
+    geom_bar(position="stack", stat="identity")+
+    scale_x_discrete(guide = guide_axis(angle = 90))+
+    ggtitle("Market Size")+
+    ylab("Vendas (m³)")+
+   theme_grey(base_size = 12)
+```
+
+
+Houve um crescimento ao longo dos anos no market size de combustiveis, tendo uma [queda no ano de 2016](https://agenciabrasil.ebc.com.br/economia/noticia/2017-02/consumo-de-combustiveis-no-brasil-caiu-45-em-2016-segundo-anp), a previsão para 2018 era de aumento, segundo Decio Oddone (diretor-geral da ANP), contando com a abertura de mercado de petróleo,gás e políticas mais liberais.
+De fato houve aumento em 2018. Em seguida, 2019 apresenta a maior venda
+dentre os anos, acompanhado de uma queda em 2020, possivelmente ocasionada pela pandemia e lockdown.
+
+
+Levando em consideração que no âmbito dos dados disponibilizados há um numero limitado de estados brasileiros, o real tamanho de mercado é bem maior, porém tomando os dados disponibilizados como base, temos que o teto do último ano atingiu aproximadamente 2bi e 400m, esse é o nosso último referencial de tamanho de mercado, no âmbito dos dados, claro. 
+
+# **TAM** (Mercado Endereçavel Total) e **SAM** (Mercado Endereçável Aproveitável)
+
+```{r, echo = FALSE, message= FALSE}
+market_size_sp = dados %>%
+  filter(regiao == "sp") %>%
+  group_by(combustivel,ano) %>%
+  summarise(vendas_mkt_sp = sum(vendas)) %>%
+  arrange(desc(vendas_mkt_sp))
+
+
+market_size_sp$ano = as.factor(market_size_sp$ano)
+
+ggplot(market_size_sp, aes(fill=combustivel, y=vendas_mkt_sp, x=ano)) + 
+    geom_bar(position="stack", stat="identity")+
+    scale_x_discrete(guide = guide_axis(angle = 90))+
+    ggtitle("TAM - SP")+
+    ylab("Vendas(m³)")+
+   theme_grey(base_size = 12)
+
+
+```
+
+Saindo do tamanho de mercado e afunilando para o **TAM**, temos SP, o estado que mais produz e consome combustíveis no Brasil, atingindo cerca de 30m³ de vendas de combustível.
+
+Indo mais além, com o **SAM**, podemos observar o etanol, tendo o seu maior pico de vendas na história em [2019](https://www.udop.com.br/noticia/2020/02/04/etanol-registra-recorde-historico-de-consumo-no-brasil.html), logo depois teve uma queda em 2020, como mencionado antes, fatores como pandemia e lockdown influenciaram na produção e consumo.
+
+
